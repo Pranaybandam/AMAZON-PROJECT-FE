@@ -1,0 +1,90 @@
+pipeline {
+    agent any 
+
+    tools {
+        jdk 'jdk17'
+        nodejs 'node24'   // Use stable version (NOT node24/25)
+    }
+
+    environment {
+        SCANNER_HOME = tool 'sonar-scanner'
+    }
+    
+    stages {
+
+        stage('Clean Workspace') {
+            steps {
+                cleanWs()
+            }
+        }
+
+        stage('Clone Project') {
+            steps {
+                git branch: 'main', url: 'https://github.com/Pranaybandam/AMAZON-PROJECT-FE.git'
+            }
+        }
+
+        stage('Install Dependencies') {
+            steps {
+                sh '''
+                node -v
+                npm -v
+                npm ci
+                '''
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            steps {
+                withSonarQubeEnv('SonarQube') {
+                    sh '''
+                    $SCANNER_HOME/bin/sonar-scanner \
+                    -Dsonar.projectName=Amazon \
+                    -Dsonar.projectKey=Amazon \
+                    -Dsonar.login=$SONAR_TOKEN
+                    '''
+                }
+            }
+        }
+
+        stage('Quality Gate') {
+            steps {
+                waitForQualityGate abortPipeline: false
+            }
+        }
+         stage('OWASP FS SCAN') {
+            steps {
+                
+        dependencyCheck additionalArguments: '--scan ./ --nvdApiKey 157635f2-0f51-4085-af25-ec6a625c5f3a', odcInstallation: 'dependency-check'
+        dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
+            }
+         }
+                stage('TRIVY FS SCAN') {
+            steps {
+                sh "trivy fs . > trivyfs.txt"
+            }
+        }
+         stage("Docker Build & Push"){
+            steps{
+                script{
+                   withDockerRegistry(credentialsId: 'docker', toolName: 'docker'){
+    sh 'docker build -t amazon .'
+    sh 'docker tag amazon pranay236/amazon:latest'
+    sh 'docker push  pranay236/amazon:latest'
+    // some block
+}       
+    }
+         }
+         }
+    stage('Trivy scan') {
+            steps { 
+   sh 'trivy image pranay236/amazon:latest > trivyimage.txt'
+             }
+     }
+     stage('Deploy to container') {
+            steps { 
+   sh 'docker run -d --name amazon -p 3000:3000 pranay236/amazon:latest'
+  }
+          }
+              }
+}
