@@ -1,0 +1,127 @@
+provider "aws" {
+    region = "ap-south-1"
+  
+}
+
+variable "instance_type" {
+    type=string
+    default = "c7i-flex.large"
+  
+}
+
+variable "ami" {
+    default = "ami-05d2d839d4f73aafb"
+  
+}
+
+resource "aws_instance" "Amazon" {
+  ami                    = var.ami
+  instance_type          = var.instance_type
+  key_name               = "mykey"
+  vpc_security_group_ids = [aws_security_group.sgw.id]
+
+  root_block_device {
+    volume_size = 20
+  }
+
+  user_data = <<EOF
+#!/bin/bash
+sudo apt update -y
+
+sudo apt install openjdk-17-jdk -y
+
+wget -O /etc/apt/keyrings/jenkins-keyring.asc \
+  https://pkg.jenkins.io/debian-stable/jenkins.io-2026.key
+
+echo "deb [signed-by=/etc/apt/keyrings/jenkins-keyring.asc] https://pkg.jenkins.io/debian-stable binary/" \
+  | sudo tee /etc/apt/sources.list.d/jenkins.list > /dev/null
+
+sudo apt update -y
+sudo apt install jenkins -y
+
+systemctl start jenkins
+
+### install docker
+
+sudo apt update -y
+sudo apt install docker.io -y
+sudo systemctl enable docker
+sudo systemctl start docker
+sudo usermod -aG docker ubuntu
+sudo chmod 777 -R /var/run/docker.sock
+sleep 10
+docker run -d --name sonar -p 9000:9000 sonarqube:latest
+##install trivy------
+sudo apt-get install wget gnupg
+wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor | sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
+echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb generic main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
+sudo apt-get update
+sudo apt-get install trivy
+EOF
+
+  tags = {
+    Name = "Jenkins"
+  }
+}
+
+
+resource "aws_instance" "Amazon1" {
+  ami                    = var.ami
+  instance_type          = var.instance_type
+  key_name               = "mykey"
+  vpc_security_group_ids = [aws_security_group.sgw.id]
+
+  root_block_device {
+    volume_size = 20
+  }
+
+   user_data = <<EOF
+#!/bin/bash
+sudo apt update -y
+
+sudo apt install openjdk-17-jdk -y
+
+### install docker
+
+sudo apt update -y
+sudo apt install docker.io -y
+sudo systemctl enable docker
+sudo systemctl start docker
+sudo usermod -aG docker ubuntu
+sudo chmod 777 -R /var/run/docker.sock
+sleep 10
+docker run -d --name sonar -p 9000:9000 sonarqube:latest
+
+##install trivy------
+sudo apt-get install wget gnupg
+wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor | sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
+echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb generic main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
+sudo apt-get update
+sudo apt-get install trivy
+EOF
+ tags = {
+    Name = "SonarQube"
+  }
+}
+resource "aws_security_group" "sgw" {
+    name = "sgw"
+    description = "Allow all inbound traffic"
+    dynamic "ingress" {
+    for_each= [8080,9000,22,443,80,3000] 
+    content {
+        from_port = ingress.value
+        to_port = ingress.value
+        protocol = "tcp"
+        cidr_blocks = ["0.0.0.0/0"]
+    } 
+    }
+    egress {
+        from_port = 0
+        to_port = 0
+        protocol = "-1"
+        cidr_blocks = ["0.0.0.0/0"]
+    }   
+  tags = {
+    Name="sgw"
+  }
+}
